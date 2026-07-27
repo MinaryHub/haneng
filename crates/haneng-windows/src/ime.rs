@@ -188,7 +188,11 @@ unsafe fn caret_via_uia() -> Option<(i32, i32, i32)> {
         }
         if let Ok(unknown) = element.GetCurrentPattern(UIA_ValuePatternId) {
             if let Ok(value) = unknown.cast::<IUIAutomationValuePattern>() {
-                if value.CurrentIsReadOnly().map(|b| b.as_bool()).unwrap_or(false) {
+                if value
+                    .CurrentIsReadOnly()
+                    .map(|b| b.as_bool())
+                    .unwrap_or(false)
+                {
                     return None;
                 }
             }
