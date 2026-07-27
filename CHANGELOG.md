@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.8.9] - 2026-07-27
+
 ### Fixed
 - macOS: 상주 시 CPU 점유가 과도하던 문제 — 배지 위치를 읽는 Accessibility
   질의(AXFocusedUIElement·AXSelectedTextRange·AXBoundsForRange)를 120ms마다
