@@ -44,7 +44,7 @@ mod macos {
     use crate::badge::Badge;
     use crate::{ax, mac_input, tis, Mode};
     use haneng_core::config;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
     use tao::event::{Event, StartCause};
@@ -53,8 +53,20 @@ mod macos {
 
     pub static ENABLED: AtomicBool = AtomicBool::new(true);
 
-    /// 커서·모드 확인 주기.
-    const POLL: Duration = Duration::from_millis(120);
+    /// 상태가 바뀌는 동안(입력·포커스·모드 변화)의 빠른 폴링 주기.
+    const POLL_ACTIVE: Duration = Duration::from_millis(120);
+    /// 상태가 한동안 그대로일 때의 유휴 폴링 주기 — 배지 위치는 카렛을 읽는
+    /// Accessibility 호출이 비싸므로(포커스 앱·WindowServer까지 CPU 소모),
+    /// 아무것도 안 바뀌면 폴링을 늦춰 상주 시 CPU 점유를 줄인다.
+    const POLL_IDLE: Duration = Duration::from_millis(450);
+    /// 이만큼의 틱 동안 상태(카렛 위치+모드)가 그대로면 유휴로 본다.
+    const IDLE_AFTER_TICKS: u32 = 6;
+
+    /// 한 틱의 표시 상태 요약 — 이전 틱과 같으면 화면이 안 바뀐 것.
+    /// `None` = 배지 숨김(포커스된 텍스트 카렛 없음). 값은 카렛 위치(비트)
+    /// + 모드. 카렛이 정지해 있으면 AX가 매번 같은 사각형을 돌려주므로
+    /// 비트 비교로 "변화 없음"을 정확히 판정할 수 있다.
+    type TickState = Option<(u64, u64, u64, u8)>;
 
     /// 마지막으로 알아낸 한/영 값 (입력 소스 조회 실패 시 폴백).
     static LAST_KOREAN: AtomicBool = AtomicBool::new(false);
@@ -106,7 +118,11 @@ mod macos {
         let badge: RefCell<Option<Badge>> = RefCell::new(None);
         let tray: RefCell<Option<tray_icon::TrayIcon>> = RefCell::new(None);
 
-        eprintln!("hanengd 실행 중 — 입력창 위에 마우스를 올리면 한/영 상태를 표시합니다.");
+        // 유휴 back-off 상태: 직전 틱의 표시 상태와 변화 없이 지난 틱 수.
+        let last_state: Cell<TickState> = Cell::new(None);
+        let idle_ticks: Cell<u32> = Cell::new(0);
+
+        eprintln!("hanengd 실행 중 — 포커스된 입력창의 카렛 옆에 한/영 상태를 표시합니다.");
 
         event_loop.run(move |event, _target, control_flow| match event {
             Event::NewEvents(StartCause::Init) => {
@@ -114,35 +130,53 @@ mod macos {
                     objc2::MainThreadMarker::new().expect("event loop runs on the main thread");
                 *badge.borrow_mut() = Some(Badge::new(mtm, opacity));
                 *tray.borrow_mut() = Some(crate::tray::install(&ENABLED));
-                *control_flow = ControlFlow::WaitUntil(Instant::now() + POLL);
+                *control_flow = ControlFlow::WaitUntil(Instant::now() + POLL_ACTIVE);
             }
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
-                tick(&badge);
-                *control_flow = ControlFlow::WaitUntil(Instant::now() + POLL);
+                let state = tick(&badge);
+                // 상태가 바뀌면 빠르게, 한동안 그대로면 유휴 주기로 늦춘다.
+                let next = if state != last_state.replace(state) {
+                    idle_ticks.set(0);
+                    POLL_ACTIVE
+                } else {
+                    let n = idle_ticks.get().saturating_add(1);
+                    idle_ticks.set(n);
+                    if n >= IDLE_AFTER_TICKS {
+                        POLL_IDLE
+                    } else {
+                        POLL_ACTIVE
+                    }
+                };
+                *control_flow = ControlFlow::WaitUntil(Instant::now() + next);
             }
             _ => {}
         });
     }
 
-    fn tick(badge: &RefCell<Option<Badge>>) {
+    /// 한 틱: 포커스된 카렛에 배지를 갱신하고, 그 표시 상태 요약을 돌려준다
+    /// (back-off 판정용). 카렛이 없으면 숨기고 `None`.
+    fn tick(badge: &RefCell<Option<Badge>>) -> TickState {
         let mut guard = badge.borrow_mut();
-        let Some(badge) = guard.as_mut() else { return };
+        let badge = guard.as_mut()?;
 
         if !ENABLED.load(Ordering::Relaxed) {
             badge.hide();
-            return;
+            return None;
         }
         // 마우스와 무관하게 **포커스된 입력 요소의 카렛**이 있으면 그 카렛에
         // 표시한다. 카렛이 없으면(텍스트 입력 포커스 아님) 숨긴다.
         if let Some(rect) = ax::focused_caret_bounds() {
-            badge.show_at_caret(
-                rect.origin.x,
-                rect.origin.y,
-                rect.size.height,
-                current_mode(),
-            );
+            let mode = current_mode();
+            badge.show_at_caret(rect.origin.x, rect.origin.y, rect.size.height, mode);
+            Some((
+                rect.origin.x.to_bits(),
+                rect.origin.y.to_bits(),
+                rect.size.height.to_bits(),
+                mode as u8,
+            ))
         } else {
             badge.hide();
+            None
         }
     }
 }

@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Fixed
+- macOS: 상주 시 CPU 점유가 과도하던 문제 — 배지 위치를 읽는 Accessibility
+  질의(AXFocusedUIElement·AXSelectedTextRange·AXBoundsForRange)를 120ms마다
+  무조건 반복해 유휴 상태에서도 초당 수십 회 IPC가 발생했다. 상태(카렛
+  위치+모드)가 한동안 그대로면 폴링 주기를 120ms→450ms로 늦추는 적응형
+  back-off를 도입해 유휴 시 질의 빈도를 약 1/4로 줄였다. 입력 중에는 종전대로
+  120ms로 반응한다.
+
 ## [0.8.8] - 2026-07-24
 
 ### Fixed
