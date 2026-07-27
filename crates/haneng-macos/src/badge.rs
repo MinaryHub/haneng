@@ -19,6 +19,8 @@ const SIZE: f64 = 24.0;
 const GAP: f64 = 2.0;
 
 #[repr(C)]
+// FFI 레이아웃 유지용 — 주 화면 높이(h)만 읽는다.
+#[allow(dead_code)]
 struct CgRect {
     x: f64,
     y: f64,

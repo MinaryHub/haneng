@@ -225,7 +225,7 @@ unsafe extern "system" fn wnd_proc(
         }
         // 약 2초마다 설정 파일의 불투명도를 다시 읽어 반영한다 (재시작 불필요).
         // 숨김 상태에서도 돌아야 하므로 아래 유휴 스킵보다 앞에 둔다.
-        if TICK.load(Ordering::Relaxed) % 13 == 0 {
+        if TICK.load(Ordering::Relaxed).is_multiple_of(13) {
             refresh_alpha(hwnd);
         }
         // 숨김(유휴) 상태에서는 절반 주기(≈300ms)로만 조회한다. 카렛이 없을 때

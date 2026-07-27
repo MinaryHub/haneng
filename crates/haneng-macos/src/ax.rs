@@ -42,6 +42,8 @@ pub struct CGRect {
 #[derive(Clone, Copy)]
 struct CFRange {
     location: isize,
+    // length는 FFI로 채워지지만 위치 계산엔 location만 쓴다.
+    #[allow(dead_code)]
     length: isize,
 }
 
