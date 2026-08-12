@@ -19,8 +19,13 @@ const SIZE: f64 = 24.0;
 const GAP: f64 = 2.0;
 
 #[repr(C)]
-// FFI 레이아웃 유지용 — 주 화면 높이(h)만 읽는다.
-#[allow(dead_code)]
+#[derive(Clone, Copy)]
+struct CgPoint {
+    x: f64,
+    y: f64,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
 struct CgRect {
     x: f64,
     y: f64,
@@ -32,6 +37,12 @@ struct CgRect {
 extern "C" {
     fn CGMainDisplayID() -> u32;
     fn CGDisplayBounds(display: u32) -> CgRect;
+    fn CGGetDisplaysWithPoint(
+        point: CgPoint,
+        max_displays: u32,
+        displays: *mut u32,
+        matching: *mut u32,
+    ) -> i32;
 }
 
 /// 주 디스플레이(메뉴 막대, 전역 원점)의 높이 — AX(top-left)↔Cocoa
@@ -40,6 +51,21 @@ extern "C" {
 /// 가리키게 한다.
 fn primary_screen_height() -> f64 {
     unsafe { CGDisplayBounds(CGMainDisplayID()).h }
+}
+
+/// 주어진 점(top-left 전역 좌표)이 놓인 디스플레이의 사각형. 어느 화면에도
+/// 안 걸리면 주 디스플레이. 배지를 그 화면 안에 가두는 데 쓴다 — 보조
+/// 모니터가 주 화면 위/왼쪽에 있으면 좌표가 음수라, 0 기준으로 판단하면
+/// 배지가 엉뚱한 곳으로 간다.
+fn display_bounds_at(x: f64, y: f64) -> CgRect {
+    unsafe {
+        let mut display: u32 = 0;
+        let mut count: u32 = 0;
+        if CGGetDisplaysWithPoint(CgPoint { x, y }, 1, &mut display, &mut count) == 0 && count > 0 {
+            return CGDisplayBounds(display);
+        }
+        CGDisplayBounds(CGMainDisplayID())
+    }
 }
 
 pub struct Badge {
@@ -120,13 +146,18 @@ impl Badge {
     /// 화면 위로 넘치면 카렛 아래쪽으로 뒤집는다.
     pub fn show_at_caret(&mut self, caret_x: f64, caret_top: f64, caret_height: f64, mode: Mode) {
         self.apply_mode(mode);
-        // top-left 기준: 카렛 위쪽에 두되 화면 밖으로 나가면 아래로.
+        // 카렛이 놓인 **그 화면** 안에서 위치를 정한다(주 화면 0 기준이 아니라).
+        let screen = display_bounds_at(caret_x, caret_top);
+        // top-left 기준: 카렛 위쪽에 두되 화면 위로 넘치면 아래로.
         let y_top_above = caret_top - SIZE - GAP;
-        let y_top = if y_top_above >= 0.0 {
+        let y_top = if y_top_above >= screen.y {
             y_top_above
         } else {
             caret_top + caret_height + GAP
         };
+        // 화면 밖으로 나가 안 보이는 일이 없게 가둔다.
+        let y_top = y_top.clamp(screen.y, (screen.y + screen.h - SIZE).max(screen.y));
+        let caret_x = caret_x.clamp(screen.x, (screen.x + screen.w - SIZE).max(screen.x));
         // AX는 top-left 원점(주 화면 기준), AppKit은 bottom-left 원점의 전역
         // 좌표계다. 변환 기준은 **주 화면**(원점 0,0, 메뉴 막대) 높이여야
         // 한다 — 배지가 놓인 화면 높이를 쓰면 멀티모니터에서 어긋난다.
