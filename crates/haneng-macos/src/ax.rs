@@ -3,10 +3,12 @@
 //! **손쉬운 사용(Accessibility) 권한**이 필요하다 — 없으면 항상 None.
 //! 마우스와 무관하게, 포커스된 텍스트 입력 요소가 있으면 그 카렛에 배지를 띄운다.
 //!
-//! 두 가지를 동시에 만족해야 배지가 뜬다:
+//! 세 가지를 모두 만족해야 배지가 뜬다:
 //! 1. 포커스 요소가 **글자를 입력할 수 있는** 요소일 것 ([`is_text_input`]) —
 //!    웹 페이지 본문·목록·정적 텍스트처럼 못 치는 곳에서는 뜨지 않는다.
-//! 2. 위치를 알아낼 수 있을 것 — 카렛 사각형(AXBoundsForRange)이 우선이고,
+//! 2. 지금 **실제로 그 요소로 입력이 갈 것** ([`has_keyboard_focus`]) —
+//!    앱이나 창이 포커스를 잃으면 숨긴다.
+//! 3. 위치를 알아낼 수 있을 것 — 카렛 사각형(AXBoundsForRange)이 우선이고,
 //!    그걸 구현하지 않은 앱(암호 필드·Electron·Java 등)은 요소 사각형의
 //!    좌측 상단으로 근사한다(그래야 "입력창인데 배지가 없다"가 안 생긴다).
 //!
@@ -93,6 +95,8 @@ extern "C" {
         settable: *mut u8,
     ) -> AXError;
     fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, timeout: f32) -> AXError;
+    fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
+    fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> AXError;
     fn AXValueGetValue(value: AXValueRef, the_type: u32, value_ptr: *mut c_void) -> bool;
     fn AXValueCreate(the_type: u32, value_ptr: *const c_void) -> AXValueRef;
     fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
@@ -309,6 +313,46 @@ unsafe fn is_text_input(element: AXUIElementRef, role: &str) -> bool {
     }
 }
 
+/// **지금 실제로 키보드 입력이 이 요소로 가는가.**
+///
+/// 요소 자신의 `AXFocused`는 쓸 수 없다 — 배경 앱의 요소도 계속 `true`로
+/// 답한다(실측: 비활성 터미널의 텍스트 영역 `AXFocused=true`). 포커스 상실은
+/// 한 단계 위에서만 보인다:
+/// - 앱이 최전면이 아니면(`AXFrontmost=false`) 입력은 그 요소로 가지 않는다.
+///   앱 전환·Spotlight·메뉴 열림·화면 잠금이 모두 여기 걸린다.
+/// - 같은 앱 안에서도 요소가 속한 창이 **키 창이 아니면** 마찬가지다.
+///   창이 "포커스도 아니고 메인도 아니다"라고 분명히 답할 때만 거른다
+///   (시트·패널에서 `AXWindow`가 부모 창을 가리키는 구현을 오판하지 않도록).
+///
+/// 판단이 안 서면(속성 미지원·질의 실패) 표시하는 쪽을 택한다.
+unsafe fn has_keyboard_focus(element: AXUIElementRef) -> bool {
+    let mut pid: i32 = 0;
+    if AXUIElementGetPid(element, &mut pid) == AX_SUCCESS && pid > 0 {
+        let app = AXUIElementCreateApplication(pid);
+        if !app.is_null() {
+            AXUIElementSetMessagingTimeout(app, MESSAGING_TIMEOUT);
+            let frontmost = attr_bool(app, "AXFrontmost");
+            CFRelease(app as CFTypeRef);
+            if frontmost == Some(false) {
+                debug_log(|| "숨김: 포커스된 앱이 최전면이 아님".to_string());
+                return false;
+            }
+        }
+    }
+    let window =
+        copy_attr(element, "AXWindow").or_else(|| copy_attr(element, "AXTopLevelUIElement"));
+    if let Some(window) = window {
+        let focused = attr_bool(window as AXUIElementRef, "AXFocused");
+        let main = attr_bool(window as AXUIElementRef, "AXMain");
+        CFRelease(window);
+        if focused == Some(false) && main != Some(true) {
+            debug_log(|| "숨김: 요소가 속한 창이 키 창이 아님".to_string());
+            return false;
+        }
+    }
+    true
+}
+
 /// 캐럿(선택 범위)의 시작 위치.
 unsafe fn caret_location(element: AXUIElementRef) -> Option<isize> {
     let range = attr_axvalue(
@@ -328,6 +372,11 @@ unsafe fn caret_location(element: AXUIElementRef) -> Option<isize> {
 unsafe fn caret_of(element: AXUIElementRef, role: &str) -> Option<CGRect> {
     if !is_text_input(element, role) {
         debug_log(|| format!("숨김: role={role} — 입력 가능한 요소가 아님"));
+        return None;
+    }
+    // 입력 가능한 요소라도, 지금 그리로 입력이 가지 않으면(앱·창이 포커스를
+    // 잃음) 배지를 숨긴다.
+    if !has_keyboard_focus(element) {
         return None;
     }
 
