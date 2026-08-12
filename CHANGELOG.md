@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.8.12] - 2026-08-12
+
 ### Fixed
 - Windows: **파워포인트 글상자에서 바깥을 클릭해도 배지가 직전 위치에 남던
   문제.** 편집이 끝날 때 `DestroyCaret` 없이 `HideCaret`만 하는 앱이 있어
