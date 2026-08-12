@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.8.10] - 2026-08-12
+
 ### Fixed
 - macOS: **입력할 수 없는 곳에 배지가 뜨던 문제** — 포커스 요소의 역할을
   확인해 입력 컨트롤(`AXTextField`/`AXSecureTextField`/`AXTextArea`/
