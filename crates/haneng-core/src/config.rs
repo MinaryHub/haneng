@@ -117,6 +117,12 @@ impl Config {
             .clamp(30, 100)
     }
 
+    /// 배지가 나타날 때 시선을 끄는 펄스 애니메이션을 재생하는가
+    /// (`badge_animation`, 기본 켜짐). `off`일 때만 끈다.
+    pub fn badge_animation(&self) -> bool {
+        self.extra("badge_animation") != Some("off")
+    }
+
     /// config.txt 포맷으로 직렬화한다. 모르는 키(extras)도 보존된다.
     pub fn serialize(&self) -> String {
         let mut out = String::from("# haneng 설정 — 데몬 재시작 시 적용\n");
@@ -270,6 +276,10 @@ mod tests {
             Config::parse("badge_opacity = 200").badge_opacity_percent(),
             100
         );
+        // 애니메이션은 기본 켜짐 — off로만 끈다.
+        assert!(Config::default().badge_animation());
+        assert!(!Config::parse("badge_animation = off").badge_animation());
+        assert!(Config::parse("badge_animation = on").badge_animation());
         assert_eq!(
             Config::parse("badge_opacity = x").badge_opacity_percent(),
             80

@@ -62,6 +62,9 @@ mod macos {
     const POLL_IDLE: Duration = Duration::from_millis(450);
     /// 이만큼의 틱 동안 상태(카렛 위치+모드)가 그대로면 유휴로 본다.
     const IDLE_AFTER_TICKS: u32 = 6;
+    /// 등장 펄스 재생 중의 틱 주기 — 부드럽게 보이되(약 30fps) AX 질의가
+    /// 폭주하지 않는 선. 0.5초짜리 펄스 동안만 이 주기로 돈다.
+    const POLL_ANIMATING: Duration = Duration::from_millis(33);
 
     /// 한 틱의 표시 상태 요약 — 이전 틱과 같으면 화면이 안 바뀐 것.
     /// `None` = 배지 숨김(포커스된 텍스트 카렛 없음). 값은 카렛 위치(비트)와
@@ -102,6 +105,8 @@ mod macos {
         );
         // 시야를 가리지 않도록 배지를 반투명하게 (기본 80%).
         let opacity = cfg.badge_opacity_percent() as f64 / 100.0;
+        // 나타날 때·모드가 바뀔 때 시선을 끄는 펄스 (기본 켜짐).
+        let animate = cfg.badge_animation();
 
         // 손쉬운 사용 권한 요청 (없으면 텍스트 감지 불가 → 배지가 안 뜬다).
         if !ax::accessibility_trusted(true) {
@@ -132,12 +137,19 @@ mod macos {
             Event::NewEvents(StartCause::Init) => {
                 let mtm =
                     objc2::MainThreadMarker::new().expect("event loop runs on the main thread");
-                *badge.borrow_mut() = Some(Badge::new(mtm, opacity));
+                *badge.borrow_mut() = Some(Badge::new(mtm, opacity, animate));
                 *tray.borrow_mut() = Some(crate::tray::install(&ENABLED));
                 *control_flow = ControlFlow::WaitUntil(Instant::now() + POLL_ACTIVE);
             }
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                 let state = tick(&badge);
+                // 펄스 재생 중에는 프레임 주기로 돈다(그 사이 back-off는 쉰다).
+                if badge.borrow().as_ref().is_some_and(|b| b.animating()) {
+                    idle_ticks.set(0);
+                    last_state.set(state);
+                    *control_flow = ControlFlow::WaitUntil(Instant::now() + POLL_ANIMATING);
+                    return;
+                }
                 // 상태가 바뀌면 빠르게, 한동안 그대로면 유휴 주기로 늦춘다.
                 let next = if state != last_state.replace(state) {
                     idle_ticks.set(0);

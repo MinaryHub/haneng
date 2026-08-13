@@ -67,7 +67,22 @@ pub fn query_korean_mode() -> Option<bool> {
 ///    비어 있다) UI Automation TextPattern의 선택 영역 사각형으로 폴백한다
 ///    (macOS 데몬이 AXSelectedTextRange/AXBoundsForRange로 읽는 것과 동형).
 pub fn caret_screen_rect() -> Option<(i32, i32, i32)> {
-    caret_via_win32().or_else(|| unsafe { caret_via_uia() })
+    if let Some(rect) = caret_via_win32() {
+        crate::debug::log(&format!(
+            "표시(win32 카렛): x={} top={} bottom={}",
+            rect.0, rect.1, rect.2
+        ));
+        return Some(rect);
+    }
+    let rect = unsafe { caret_via_uia() };
+    match rect {
+        Some(r) => crate::debug::log(&format!(
+            "표시(UIA 폴백): x={} top={} bottom={}",
+            r.0, r.1, r.2
+        )),
+        None => crate::debug::log("숨김: 카렛을 못 읽음(win32·UIA 모두)"),
+    }
+    rect
 }
 
 /// 표준 Win32 카렛(`GUITHREADINFO.rcCaret`) → 화면 좌표.
@@ -81,11 +96,14 @@ fn caret_via_win32() -> Option<(i32, i32, i32)> {
         let mut info: GUITHREADINFO = zeroed();
         info.cbSize = size_of::<GUITHREADINFO>() as u32;
         if GetGUIThreadInfo(thread, &mut info) == 0 || info.hwndCaret.is_null() {
+            crate::debug::log("win32 카렛 없음(hwndCaret=null) → UIA 폴백 시도");
             return None;
         }
         // 편집이 끝나도 카렛이 남아 있는 앱(파워포인트 글상자 바깥 클릭 등)에서
         // 배지가 붙박이가 되는 것을 막는다 — 아래 참고.
-        if !caret_alive(info.hwndCaret as usize, info.flags & GUI_CARETBLINKING != 0) {
+        let blinking = info.flags & GUI_CARETBLINKING != 0;
+        if !caret_alive(info.hwndCaret as usize, blinking) {
+            crate::debug::log("win32 카렛이 숨겨짐(깜박임 멈춤) → 표시 안 함");
             return None;
         }
         // 입력 불가한 컨트롤엔 표시하지 않는다: 비활성(disabled)이거나 읽기 전용
@@ -94,11 +112,13 @@ fn caret_via_win32() -> Option<(i32, i32, i32)> {
         if IsWindowEnabled(info.hwndCaret) == 0
             || GetWindowLongW(info.hwndCaret, GWL_STYLE) & ES_READONLY != 0
         {
+            crate::debug::log("win32 카렛: 비활성/읽기 전용 컨트롤 → 표시 안 함");
             return None;
         }
         let r = info.rcCaret;
         // 높이 0이면 실제 카렛이 아니다 (질의 실패·스텁 값).
         if r.bottom <= r.top {
+            crate::debug::log("win32 카렛: 높이 0(유효하지 않은 rcCaret) → 표시 안 함");
             return None;
         }
         // rcCaret은 hwndCaret 클라이언트 좌표 → 화면 좌표로 변환.
@@ -236,7 +256,22 @@ unsafe fn caret_via_uia() -> Option<(i32, i32, i32)> {
         let mut fg_pid: u32 = 0;
         GetWindowThreadProcessId(foreground, &mut fg_pid);
         if element.CurrentProcessId().ok()? as u32 != fg_pid {
+            crate::debug::log("UIA: 포커스 요소가 포그라운드 앱이 아님 → 표시 안 함");
             return None;
+        }
+        // 아래 판정들의 근거를 한 줄로 남긴다(진단용). 요소 이름은 사용자가 입력한
+        // 글자일 수 있어 기록하지 않는다 — 컨트롤 종류·플래그만.
+        if crate::debug::enabled() {
+            crate::debug::log(&format!(
+                "UIA 포커스 요소: ctrl={} focus={:?} enabled={:?} 자동화ID={:?}",
+                element.CurrentControlType().map(|c| c.0).unwrap_or(-1),
+                element.CurrentHasKeyboardFocus().map(|b| b.as_bool()),
+                element.CurrentIsEnabled().map(|b| b.as_bool()),
+                element
+                    .CurrentAutomationId()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+            ));
         }
         // 같은 앱 안에서 편집을 끝낸 경우(파워포인트에서 글상자 바깥 클릭 등)
         // GetFocusedElement가 캐시된 직전 요소를 계속 돌려줄 수 있다. 요소에
@@ -254,6 +289,7 @@ unsafe fn caret_via_uia() -> Option<(i32, i32, i32)> {
         // 배지가 뜨는 오탐을 줄인다.
         let ctype = element.CurrentControlType().ok()?;
         if ctype != UIA_EditControlTypeId && ctype != UIA_DocumentControlTypeId {
+            crate::debug::log("UIA: 편집/문서 컨트롤이 아님 → 표시 안 함");
             return None;
         }
         // 입력 불가한 필드엔 표시하지 않는다: 비활성(disabled)이거나, ValuePattern이
@@ -282,15 +318,18 @@ unsafe fn caret_via_uia() -> Option<(i32, i32, i32)> {
             .ok()?;
         let selection = pattern.GetSelection().ok()?;
         if selection.Length().ok()? < 1 {
+            crate::debug::log("UIA: 선택 영역 없음 → 표시 안 함");
             return None;
         }
         let range = selection.GetElement(0).ok()?;
 
         // 접힌 캐럿(선택 없음)은 사각형이 빌 수 있다 → 한 글자만큼 넓혀 재시도.
         if let Some(rect) = first_rect(&range) {
+            crate::debug::log("UIA: 선택 영역 사각형 사용");
             return Some(rect);
         }
         range.ExpandToEnclosingUnit(TextUnit_Character).ok()?;
+        crate::debug::log("UIA: 빈 선택 → 한 글자 확장 사각형 사용");
         first_rect(&range)
     })
 }

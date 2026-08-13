@@ -11,8 +11,10 @@ use objc2_app_kit::{
     NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+use std::time::Instant;
 
 use crate::Mode;
+use haneng_core::anim::{pulse_alpha, PULSE_MS};
 
 const SIZE: f64 = 24.0;
 /// 카렛과 배지 사이 여백 — 배지는 카렛 위쪽에 놓아 입력 글자를 가리지 않는다.
@@ -73,11 +75,18 @@ pub struct Badge {
     label: Retained<NSTextField>,
     visible: bool,
     mode: Option<Mode>,
+    /// 사용자가 설정한 평상시 불투명도 — 펄스가 끝나면 이 값으로 돌아온다.
+    opacity: f64,
+    /// 등장 펄스 사용 여부 (`badge_animation`).
+    animate: bool,
+    /// 재생 중인 펄스의 시작 시각. `None`이면 재생 중이 아니다.
+    pulse_start: Option<Instant>,
 }
 
 impl Badge {
     /// `opacity`는 0.0(투명)~1.0(불투명) — 시야를 가리지 않도록 반투명.
-    pub fn new(mtm: MainThreadMarker, opacity: f64) -> Self {
+    /// `animate`가 참이면 나타날 때·모드가 바뀔 때 펄스로 시선을 끈다.
+    pub fn new(mtm: MainThreadMarker, opacity: f64, animate: bool) -> Self {
         unsafe {
             let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(SIZE, SIZE));
             let window = NSWindow::initWithContentRect_styleMask_backing_defer(
@@ -123,13 +132,50 @@ impl Badge {
                 label,
                 visible: false,
                 mode: None,
+                opacity,
+                animate,
+                pulse_start: None,
             }
         }
+    }
+
+    /// 펄스 재생 중인가 — 재생 중에는 호출자가 더 촘촘히 틱을 돌려야 한다.
+    pub fn animating(&self) -> bool {
+        self.pulse_start.is_some()
+    }
+
+    /// 펄스를 처음부터 재생한다(설정에서 껐으면 아무것도 안 한다).
+    fn start_pulse(&mut self) {
+        if self.animate {
+            self.pulse_start = Some(Instant::now());
+        }
+    }
+
+    /// 진행 중인 펄스를 한 프레임 진행시킨다. 시간이 다 됐으면 평상시
+    /// 불투명도로 되돌리고 끝낸다(프레임 수가 아니라 경과 시간 기준이라
+    /// 틱이 늦어져도 재생 길이가 늘어나지 않는다).
+    fn step_pulse(&mut self) {
+        let Some(start) = self.pulse_start else {
+            return;
+        };
+        let elapsed = start.elapsed().as_millis() as u64;
+        if elapsed >= PULSE_MS {
+            self.pulse_start = None;
+            self.window.setAlphaValue(self.opacity);
+            return;
+        }
+        let t = elapsed as f64 / PULSE_MS as f64;
+        self.window.setAlphaValue(pulse_alpha(self.opacity, t));
     }
 
     fn apply_mode(&mut self, mode: Mode) {
         if self.mode == Some(mode) {
             return;
+        }
+        // 떠 있는 상태에서 한/영·Caps가 바뀌면 펄스로 알린다. 첫 표시는
+        // show_at_caret이 따로 재생하므로 여기선 이미 뜬 경우만.
+        if self.mode.is_some() && self.visible {
+            self.start_pulse();
         }
         self.mode = Some(mode);
         let (r, g, b, text) = match mode {
@@ -177,13 +223,21 @@ impl Badge {
         if !self.visible {
             self.window.orderFront(None);
             self.visible = true;
+            // 새로 나타났다 — 시선을 끄는 펄스를 재생한다.
+            self.start_pulse();
         }
+        self.step_pulse();
     }
 
     pub fn hide(&mut self) {
         if self.visible {
             self.window.orderOut(None);
             self.visible = false;
+            // 재생 중이던 펄스는 중단하고 평상시 불투명도로 되돌린다 —
+            // 다음에 뜰 때 어중간한 값으로 시작하지 않게.
+            if self.pulse_start.take().is_some() {
+                self.window.setAlphaValue(self.opacity);
+            }
         }
     }
 }

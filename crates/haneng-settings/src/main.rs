@@ -77,6 +77,8 @@ struct SettingsApp {
     initial_mode: Option<bool>,
     /// 배지 불투명도 퍼센트 (30~100).
     opacity: u8,
+    /// 배지가 나타날 때 펄스 애니메이션으로 시선을 끌지 여부.
+    animate: bool,
     status: String,
     update: Arc<Mutex<UpdateState>>,
 }
@@ -91,11 +93,13 @@ impl SettingsApp {
             _ => None,
         };
         let opacity = config.badge_opacity_percent();
+        let animate = config.badge_animation();
         Self {
             config,
             show_badge,
             initial_mode,
             opacity,
+            animate,
             status: String::new(),
             update: Arc::new(Mutex::new(UpdateState::Idle)),
         }
@@ -144,6 +148,8 @@ impl SettingsApp {
         );
         self.config
             .set_extra("badge_opacity", &self.opacity.to_string());
+        self.config
+            .set_extra("badge_animation", if self.animate { "" } else { "off" });
         let result = config::save_config(&self.config);
         self.status = match result {
             Ok(()) => {
@@ -189,6 +195,12 @@ impl eframe::App for SettingsApp {
                 eframe::egui::Slider::new(&mut self.opacity, 30..=100)
                     .suffix("%")
                     .step_by(5.0),
+            );
+            ui.add_space(12.0);
+
+            ui.checkbox(
+                &mut self.animate,
+                "나타날 때 반짝임 (배지가 뜨거나 한/영이 바뀔 때 눈에 띄게)",
             );
             ui.add_space(12.0);
 

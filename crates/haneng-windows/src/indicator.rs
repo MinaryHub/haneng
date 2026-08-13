@@ -24,10 +24,10 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GetClientRect, RegisterClassW, SetLayeredWindowAttributes,
-    SetTimer, SetWindowPos, ShowWindow, HWND_TOPMOST, LWA_ALPHA, SWP_NOACTIVATE, SWP_NOSIZE,
-    SWP_SHOWWINDOW, SW_HIDE, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, GetClientRect, KillTimer, RegisterClassW,
+    SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow, HWND_TOPMOST, LWA_ALPHA,
+    SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, WM_PAINT, WM_TIMER, WNDCLASSW,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 /// 배지에 표시할 입력 상태.
@@ -66,6 +66,11 @@ static ENABLED_SRC: OnceLock<&'static AtomicBool> = OnceLock::new();
 static ALPHA_SOURCE: OnceLock<fn() -> u8> = OnceLock::new();
 /// 마지막으로 창에 적용한 알파 — 안 바뀌었으면 재적용을 생략한다.
 static APPLIED_ALPHA: AtomicU8 = AtomicU8::new(255);
+/// 등장 애니메이션 사용 여부를 알려주는 콜백 (init에서 설정).
+static ANIMATE_SOURCE: OnceLock<fn() -> bool> = OnceLock::new();
+/// 진행 중인 펄스의 프레임 번호. `NOT_ANIMATING`이면 재생 중이 아니다.
+static ANIM_FRAME: AtomicU32 = AtomicU32::new(NOT_ANIMATING);
+const NOT_ANIMATING: u32 = u32::MAX;
 
 /// 배지 한 변 크기(px)와 카렛과의 간격.
 const BADGE_SIZE: i32 = 22;
@@ -74,6 +79,11 @@ const GAP: i32 = 2;
 /// 카렛 위치·모드·표시 여부 확인 주기.
 const REFRESH_TIMER_ID: usize = 1;
 const REFRESH_MS: u32 = 150;
+/// 등장 펄스 애니메이션 타이머 — 재생 중에만 돈다(끝나면 KillTimer).
+const ANIM_TIMER_ID: usize = 2;
+const ANIM_MS: u32 = 30;
+/// 펄스 전체 프레임 수 (약 500ms / 30ms).
+const ANIM_FRAMES: u32 = (haneng_core::anim::PULSE_MS / ANIM_MS as u64) as u32;
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain([0]).collect()
@@ -82,10 +92,16 @@ fn wide(s: &str) -> Vec<u16> {
 /// 배지 창 생성 + 갱신 타이머 시작 (메시지 루프 스레드에서 한 번 호출).
 /// `alpha_source`는 창 불투명도(0=완전 투명, 255=불투명)를 돌려주는 콜백 —
 /// 타이머가 주기적으로 다시 호출해 설정 변경을 실행 중에도 반영한다.
-pub fn init(mode_source: fn() -> Mode, enabled: &'static AtomicBool, alpha_source: fn() -> u8) {
+pub fn init(
+    mode_source: fn() -> Mode,
+    enabled: &'static AtomicBool,
+    alpha_source: fn() -> u8,
+    animate_source: fn() -> bool,
+) {
     let _ = MODE_SOURCE.set(mode_source);
     let _ = ENABLED_SRC.set(enabled);
     let _ = ALPHA_SOURCE.set(alpha_source);
+    let _ = ANIMATE_SOURCE.set(animate_source);
     unsafe {
         let hinstance = GetModuleHandleW(std::ptr::null());
         let class_name = wide("haneng-indicator");
@@ -123,12 +139,59 @@ pub fn init(mode_source: fn() -> Mode, enabled: &'static AtomicBool, alpha_sourc
 }
 
 /// 상태 소스를 다시 읽어 바뀌었으면 다시 그린다.
+/// 배지가 떠 있는 상태에서 한/영·Caps가 바뀌면 펄스로 알린다.
 fn refresh_mode(hwnd: HWND) -> Mode {
     let mode = MODE_SOURCE.get().map(|f| f()).unwrap_or(Mode::EnglishLower);
     if MODE.swap(mode as u8, Ordering::Relaxed) != mode as u8 && !hwnd.is_null() {
-        unsafe { InvalidateRect(hwnd, std::ptr::null(), 1) };
+        unsafe {
+            InvalidateRect(hwnd, std::ptr::null(), 1);
+            if VISIBLE.load(Ordering::Relaxed) {
+                start_pulse(hwnd);
+            }
+        }
     }
     mode
+}
+
+/// 등장 펄스를 시작한다(설정에서 껐으면 아무것도 안 한다).
+/// 재생 중이면 처음부터 다시 — 연속으로 바뀔 때 마지막 변화가 보인다.
+unsafe fn start_pulse(hwnd: HWND) {
+    if !ANIMATE_SOURCE.get().map(|f| f()).unwrap_or(false) {
+        return;
+    }
+    ANIM_FRAME.store(0, Ordering::Relaxed);
+    SetTimer(hwnd, ANIM_TIMER_ID, ANIM_MS, None);
+}
+
+/// 펄스 한 프레임. 끝나면 타이머를 끄고 평상시 불투명도로 되돌린다.
+unsafe fn pulse_frame(hwnd: HWND) {
+    let frame = ANIM_FRAME.load(Ordering::Relaxed);
+    if frame == NOT_ANIMATING {
+        KillTimer(hwnd, ANIM_TIMER_ID);
+        return;
+    }
+    let base = APPLIED_ALPHA.load(Ordering::Relaxed) as f64 / 255.0;
+    if frame >= ANIM_FRAMES {
+        stop_pulse(hwnd, base);
+        return;
+    }
+    let t = frame as f64 / ANIM_FRAMES as f64;
+    let alpha = (haneng_core::anim::pulse_alpha(base, t) * 255.0).round() as u8;
+    SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
+    ANIM_FRAME.store(frame + 1, Ordering::Relaxed);
+}
+
+/// 펄스를 끝내고 평상시 불투명도로 되돌린다.
+unsafe fn stop_pulse(hwnd: HWND, base: f64) {
+    if ANIM_FRAME.swap(NOT_ANIMATING, Ordering::Relaxed) == NOT_ANIMATING {
+        return;
+    }
+    KillTimer(hwnd, ANIM_TIMER_ID);
+    SetLayeredWindowAttributes(hwnd, 0, (base * 255.0).round() as u8, LWA_ALPHA);
+}
+
+fn animating() -> bool {
+    ANIM_FRAME.load(Ordering::Relaxed) != NOT_ANIMATING
 }
 
 /// 화면 좌표 `(x, y)`가 속한 모니터의 작업 영역 `(left, top, right, bottom)`.
@@ -194,14 +257,20 @@ unsafe fn refresh_alpha(hwnd: HWND) {
         return;
     };
     let alpha = src();
-    if APPLIED_ALPHA.swap(alpha, Ordering::Relaxed) != alpha {
+    let changed = APPLIED_ALPHA.swap(alpha, Ordering::Relaxed) != alpha;
+    // 펄스 중에는 창 알파를 펄스가 쥐고 있다. 평상시 값(APPLIED_ALPHA)만
+    // 갱신해 두면 펄스가 끝나면서 새 값으로 되돌아간다.
+    if changed && !animating() {
         SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
     }
 }
 
-/// 배지를 숨긴다. (타이머는 상시 유지 — 끄지 않는다.)
+/// 배지를 숨긴다. (갱신 타이머는 상시 유지 — 끄지 않는다.)
 unsafe fn hide(hwnd: HWND) {
     if VISIBLE.swap(false, Ordering::Relaxed) {
+        // 재생 중이던 펄스는 중단하고 평상시 불투명도로 되돌린다 —
+        // 다음에 뜰 때 어중간한 알파로 시작하지 않게.
+        stop_pulse(hwnd, APPLIED_ALPHA.load(Ordering::Relaxed) as f64 / 255.0);
         ShowWindow(hwnd, SW_HIDE);
     }
 }
@@ -239,10 +308,16 @@ unsafe extern "system" fn wnd_proc(
         if place_badge(hwnd) {
             if !VISIBLE.swap(true, Ordering::Relaxed) {
                 InvalidateRect(hwnd, std::ptr::null(), 1);
+                // 새로 나타났다 — 시선을 끄는 펄스를 재생한다.
+                start_pulse(hwnd);
             }
         } else {
             hide(hwnd);
         }
+        return 0;
+    }
+    if msg == WM_TIMER && wparam == ANIM_TIMER_ID {
+        pulse_frame(hwnd);
         return 0;
     }
     if msg == WM_PAINT {

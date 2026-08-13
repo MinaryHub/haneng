@@ -15,6 +15,8 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 #[cfg(windows)]
+mod debug;
+#[cfg(windows)]
 mod ime;
 #[cfg(windows)]
 mod indicator;
@@ -81,6 +83,12 @@ mod win {
         (pct as u16 * 255 / 100) as u8
     }
 
+    /// 등장 애니메이션 사용 여부. 불투명도와 같은 이유로 매번 다시 읽는다
+    /// (배지가 뜰 때만 호출되므로 파일 읽기 비용이 문제되지 않는다).
+    fn animation_enabled() -> bool {
+        config::load_config().badge_animation()
+    }
+
     /// 데몬은 하나만 — 네임드 뮤텍스로 중복 실행을 막는다.
     /// 이미 실행 중이면 false (호출자 즉시 종료). 뮤텍스 핸들은 프로세스가
     /// 끝날 때까지 유지되도록 닫지 않는다.
@@ -114,7 +122,7 @@ mod win {
         // 마우스와 무관하게 포커스 카렛을 따라가도록 타이머로 구동한다.
         // init이 내부 타이머를 걸고, ENABLED로 표시 여부를 제어한다.
         // 불투명도는 콜백으로 넘겨 타이머가 주기적으로 다시 읽는다.
-        indicator::init(current_mode, &ENABLED, current_alpha);
+        indicator::init(current_mode, &ENABLED, current_alpha, animation_enabled);
         // 트레이 아이콘은 메시지 루프가 도는 이 스레드에서 만들어야 한다.
         let _tray = crate::tray::install(&ENABLED);
 

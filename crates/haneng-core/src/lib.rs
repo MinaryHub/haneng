@@ -14,6 +14,7 @@
 //! assert_eq!(detector.analyze("hello"), Verdict::Keep);
 //! ```
 
+pub mod anim;
 pub mod auto;
 pub mod compose;
 pub mod config;
