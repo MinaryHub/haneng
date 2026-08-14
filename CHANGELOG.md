@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-14
+
 ### Removed (BREAKING)
 - **제품을 Windows 전용으로 축소.** macOS(`hanengd`)·Linux/X11(`hanengl`)
   데몬과 패키징 스크립트를 저장소에서 제거했다. 마지막 macOS 릴리스에서

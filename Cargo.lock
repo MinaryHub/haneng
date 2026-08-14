@@ -1309,15 +1309,15 @@ dependencies = [
 
 [[package]]
 name = "haneng-core"
-version = "0.8.13"
+version = "0.9.0"
 
 [[package]]
 name = "haneng-datagen"
-version = "0.8.13"
+version = "0.9.0"
 
 [[package]]
 name = "haneng-settings"
-version = "0.8.13"
+version = "0.9.0"
 dependencies = [
  "eframe",
  "haneng-core",
@@ -1327,7 +1327,7 @@ dependencies = [
 
 [[package]]
 name = "haneng-windows"
-version = "0.8.13"
+version = "0.9.0"
 dependencies = [
  "haneng-core",
  "tray-icon",
