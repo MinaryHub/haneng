@@ -2,7 +2,7 @@
 # 릴리스 절차: 버전 올림 → CHANGELOG 확정 → 커밋 → 태그.
 #
 # 사용: scripts/release.sh 0.2.0
-# 이후: git push origin main --tags  → release.yml이 3개 OS 패키지를
+# 이후: git push origin main --tags  → release.yml이 Windows 패키지를
 #       드래프트 릴리스에 첨부한다.
 set -euo pipefail
 cd "$(dirname "$0")/.."

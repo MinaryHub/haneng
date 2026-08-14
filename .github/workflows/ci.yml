@@ -1,5 +1,6 @@
-# 3개 OS 네이티브 빌드 + 테스트 + 린트.
-# 정확도 게이트(tests/accuracy.rs)가 모든 플랫폼에서 돈다 — 감지기 회귀 차단.
+# Windows 네이티브 빌드 + 테스트 + 린트.
+# 정확도 게이트(tests/accuracy.rs)가 함께 돈다 — 감지기 회귀 차단.
+# (제품이 Windows 전용이 되면서 macOS·Linux 러너는 제거했다 — 0.9.0.)
 name: CI
 
 on:
@@ -12,11 +13,7 @@ env:
 
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -33,5 +30,5 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-      - name: Release build (daemons + FFI)
+      - name: Release build
         run: cargo build --release --workspace

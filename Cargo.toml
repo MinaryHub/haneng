@@ -2,8 +2,6 @@
 resolver = "2"
 members = [
     "crates/haneng-core",
-    "crates/haneng-macos",
-    "crates/haneng-linux",
     "crates/haneng-datagen",
     "crates/haneng-settings",
     "crates/haneng-windows",

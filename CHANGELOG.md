@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Removed (BREAKING)
+- **제품을 Windows 전용으로 축소.** macOS(`hanengd`)·Linux/X11(`hanengl`)
+  데몬과 패키징 스크립트를 저장소에서 제거했다. 마지막 macOS 릴리스에서
+  배지가 아예 표시되지 않는 문제가 확인됐고, 개발 머신에서 실기 검증이
+  불가능한 플랫폼을 셋이나 유지하는 비용이 효용을 넘어섰다. 전체 구현은
+  git 태그 **`v0.8.13`**에 보존된다(필요하면 그 시점에서 되살릴 수 있다).
+- 릴리스는 이제 Windows MSI/zip만 만든다. CI도 windows 러너만 돌린다.
+- `haneng-core::single_instance`(unix flock)는 이제 쓰이지 않는다 —
+  Windows는 네임드 뮤텍스를 쓴다. 나머지 legacy 코드처럼 컴파일만 유지.
+
 ## [0.8.13] - 2026-08-13
 
 ### Added
