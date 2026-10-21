@@ -3,7 +3,7 @@
 #
 # 사용: scripts/release.sh 0.2.0
 # 이후: git push origin main --tags  → release.yml이 Windows 패키지를
-#       드래프트 릴리스에 첨부한다.
+#       릴리스로 바로 공개한다.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
