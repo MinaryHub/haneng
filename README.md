@@ -73,7 +73,7 @@ cargo check -p haneng-windows --target x86_64-pc-windows-msvc   # 다른 OS에�
 - [SemVer](https://semver.org/lang/ko/), 루트 `Cargo.toml`의
   `[workspace.package] version`이 단일 출처. 이력은 [CHANGELOG.md](CHANGELOG.md).
 - 릴리스: `scripts/release.sh <버전>` 후 `git push origin main --tags`
-  → CI가 Windows 패키지를 빌드해 드래프트 릴리스에 첨부.
+  → CI가 Windows 패키지를 빌드해 릴리스를 바로 공개.
 
 ## 라이선스
 
