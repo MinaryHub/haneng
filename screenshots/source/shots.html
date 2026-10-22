@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>haneng store shots</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ko: #2B6CB0; --lo: #4A5568; --up: #DD6B20;
+    --ink: #1A202C; --muted: #4A5568;
+    --badge-alpha: 0.8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #fff; }
+  body { font-family: "Noto Sans KR", "Malgun Gothic", sans-serif; color: var(--ink); }
+  .scene { position: absolute; inset: 0; display: none; }
+  .scene.on { display: block; }
+  .bg-ko { background: radial-gradient(1200px 800px at 85% 30%, #DCE9F7 0%, #F4F8FC 55%, #FFFFFF 100%); }
+  .bg-lo { background: radial-gradient(1200px 800px at 85% 30%, #E4E7EC 0%, #F6F7F9 55%, #FFFFFF 100%); }
+  .bg-up { background: radial-gradient(1200px 800px at 85% 30%, #FBE3CF 0%, #FDF5EE 55%, #FFFFFF 100%); }
+  .bg-dark { background: radial-gradient(1200px 900px at 80% 40%, #23314A 0%, #141B27 60%, #0E131C 100%); color: #EDF2F7; }
+
+  .copy { position: absolute; left: 120px; top: 0; bottom: 0; width: 640px; display: flex; flex-direction: column; justify-content: center; }
+  .brand { display: flex; align-items: center; gap: 14px; font-weight: 700; font-size: 26px; color: var(--muted); margin-bottom: 36px; }
+  .brand img { width: 44px; height: 44px; }
+  .bg-dark .brand { color: #A0AEC0; }
+  h1 { font-size: 68px; line-height: 1.22; font-weight: 900; letter-spacing: -0.02em; }
+  h1 em { font-style: normal; }
+  .sub { margin-top: 28px; font-size: 28px; line-height: 1.6; color: var(--muted); font-weight: 500; }
+  .bg-dark .sub { color: #CBD5E0; }
+
+  .legend { margin-top: 48px; display: flex; flex-direction: column; gap: 18px; }
+  .legend div { display: flex; align-items: center; gap: 18px; font-size: 26px; font-weight: 500; }
+
+  /* the real badge: 22px GDI square, white system-font glyph — drawn here at 200% */
+  .badge { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center;
+           color: #fff; font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-weight: 700; font-size: 26px;
+           opacity: var(--badge-alpha); line-height: 1; flex: none; }
+  .badge.ko { background: var(--ko); }
+  .badge.lo { background: var(--lo); }
+  .badge.up { background: var(--up); }
+  .legend .badge { opacity: 1; }
+
+  /* Windows 11-style app window */
+  .win { position: absolute; background: #fff; border-radius: 12px; overflow: hidden;
+         box-shadow: 0 40px 90px rgba(20,30,50,.22), 0 6px 18px rgba(20,30,50,.12), 0 0 0 1px rgba(0,0,0,.08); }
+  .titlebar { height: 64px; display: flex; align-items: center; padding-left: 24px; background: #F3F3F3;
+              font-family: "Segoe UI", "Malgun Gothic", sans-serif; font-size: 22px; color: #1F1F1F; gap: 14px; }
+  .titlebar .ico { width: 26px; height: 26px; border-radius: 5px; }
+  .titlebar .ctl { margin-left: auto; display: flex; height: 100%; }
+  .titlebar .ctl span { width: 92px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #444; }
+  .menubar { height: 52px; display: flex; align-items: center; gap: 36px; padding-left: 28px; background: #F9F9F9;
+             border-bottom: 1px solid #E5E5E5; font-family: "Segoe UI", "Malgun Gothic", sans-serif; font-size: 21px; color: #333; }
+  .doc { padding: 44px 48px; font-family: "Malgun Gothic", sans-serif; font-size: 34px; line-height: 1.75; color: #111; white-space: pre; }
+  .statusbar { position: absolute; left: 0; right: 0; bottom: 0; height: 46px; background: #F3F3F3; border-top: 1px solid #E5E5E5;
+               display: flex; align-items: center; gap: 40px; padding-left: 28px; font-family: "Segoe UI", sans-serif; font-size: 19px; color: #555; }
+
+  .caret { position: relative; display: inline-block; width: 3px; height: 1.25em; background: #111; vertical-align: -0.22em; }
+  .caret > .badge { position: absolute; left: 0; bottom: calc(100% + 4px); }
+
+  /* form widgets */
+  .field-label { font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 24px; color: #444; margin-bottom: 12px; }
+  .field { height: 72px; border: 2px solid #C8CDD3; border-radius: 8px; padding: 0 22px; display: flex; align-items: center;
+           font-family: "Segoe UI", "Malgun Gothic", sans-serif; font-size: 30px; color: #111; background: #fff; }
+  .field.focus { border-color: #0067C0; box-shadow: 0 0 0 3px rgba(0,103,192,.18); border-bottom-width: 3px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 64px; padding: 0 40px; border-radius: 8px;
+         font-family: "Segoe UI", "Malgun Gothic", sans-serif; font-size: 26px; background: #0067C0; color: #fff; }
+  .warn { margin-top: 18px; font-family: "Malgun Gothic", sans-serif; font-size: 22px; color: #C05621; display: flex; gap: 10px; align-items: center; }
+
+  .zoom { position: absolute; width: 300px; height: 300px; border-radius: 50%; background: #fff; overflow: hidden;
+          box-shadow: 0 20px 50px rgba(20,30,50,.25), 0 0 0 6px #fff, 0 0 0 8px rgba(0,0,0,.06); }
+  .zoom .inner { position: absolute; transform-origin: 0 0; }
+
+  .feat { margin-top: 44px; display: grid; gap: 26px; }
+  .feat div { display: flex; gap: 20px; align-items: flex-start; font-size: 26px; line-height: 1.5; }
+  .feat b { display: block; font-size: 28px; color: #fff; margin-bottom: 2px; }
+  .feat span.k { flex: none; width: 48px; height: 48px; border-radius: 12px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
+                 display: flex; align-items: center; justify-content: center; font-size: 26px; }
+  .feat .t { color: #A0AEC0; }
+  .light .feat b { color: var(--ink); }
+  .light .feat .t { color: var(--muted); }
+  .light .feat span.k { background: #fff; border-color: #E2E8F0; }
+</style>
+</head>
+<body>
+
+<!-- 1. hero -->
+<section class="scene bg-ko" id="s1">
+  <div class="copy">
+    <div class="brand"><img src="../../assets/icon-256.png" alt="">haneng</div>
+    <h1>타이핑하기 전에<br><em style="color:var(--ko)">한/영</em>을 먼저<br>확인하세요</h1>
+    <p class="sub">입력 커서 바로 위에 지금 입력 상태를<br>작은 배지로 보여 줍니다.</p>
+    <div class="legend">
+      <div><span class="badge ko">한</span>한글 모드</div>
+      <div><span class="badge lo">a</span>영문 소문자</div>
+      <div><span class="badge up">A</span>영문 + Caps Lock</div>
+    </div>
+  </div>
+  <div class="win" style="left:860px; top:170px; width:960px; height:740px;">
+    <div class="titlebar"><img class="ico" src="../../assets/icon-256.png" alt="">주간 회의록.txt - 메모장<div class="ctl"><span>─</span><span>☐</span><span>✕</span></div></div>
+    <div class="menubar"><span>파일</span><span>편집</span><span>보기</span></div>
+<div class="doc">주간 회의록
+
+• 다음 주 출시 일정 확인
+• 디자인 리뷰는 목요일 오후 2시
+• 배포 체크리스트 공유하기
+
+메모: 금요일까지 정리<span class="caret"><span class="badge ko">한</span></span></div>
+    <div class="statusbar"><span>줄 7, 열 15</span><span>100%</span><span>Windows (CRLF)</span><span>UTF-8</span></div>
+  </div>
+</section>
+
+<!-- 2. korean -->
+<section class="scene bg-ko" id="s2">
+  <div class="copy">
+    <div class="brand"><img src="../../assets/icon-256.png" alt="">haneng</div>
+    <h1>한글 모드는<br><em style="color:var(--ko)">파란 ‘한’</em></h1>
+    <p class="sub">커서가 있는 곳 바로 위에 뜹니다.<br>마우스가 어디에 있든 상관없이<br>입력 커서를 따라다닙니다.</p>
+  </div>
+  <div class="win" style="left:860px; top:200px; width:960px; height:680px;">
+    <div class="titlebar"><img class="ico" src="../../assets/icon-256.png" alt="">새 메시지<div class="ctl"><span>─</span><span>☐</span><span>✕</span></div></div>
+    <div style="padding:34px 48px 0; font-family:'Malgun Gothic',sans-serif; font-size:26px; color:#555; line-height:2.2; border-bottom:1px solid #eee;">
+      <div>받는 사람 &nbsp;<span style="color:#111">김지현</span></div>
+      <div>제목 &nbsp;<span style="color:#111">이번 주 일정 공유</span></div>
+    </div>
+<div class="doc" style="font-size:32px;">지현님, 안녕하세요.
+
+이번 주 일정 정리해서 보내드립니다.
+
+확인 부탁드려요<span class="caret"><span class="badge ko">한</span></span></div>
+  </div>
+</section>
+
+<!-- 3. english lower -->
+<section class="scene bg-lo" id="s3">
+  <div class="copy">
+    <div class="brand"><img src="../../assets/icon-256.png" alt="">haneng</div>
+    <h1>영문 모드는<br><em style="color:var(--lo)">회색 ‘a’</em></h1>
+    <p class="sub">“gksrmf” 같은 오타를 치기 전에<br>지금 영문인지 바로 알 수 있습니다.</p>
+  </div>
+  <div class="win" style="left:860px; top:240px; width:960px; height:600px;">
+    <div class="titlebar"><img class="ico" src="../../assets/icon-256.png" alt="">프로젝트 설정<div class="ctl"><span>─</span><span>☐</span><span>✕</span></div></div>
+    <div style="padding:56px 64px;">
+      <div class="field-label">프로젝트 이름</div>
+      <div class="field" style="margin-bottom:40px;">사내 메신저 리뉴얼</div>
+      <div class="field-label">저장소 주소</div>
+      <div class="field focus">github.com/team/messen<span class="caret" style="height:36px; vertical-align:middle;"><span class="badge lo">a</span></span></div>
+      <div style="margin-top:56px; display:flex; gap:20px; justify-content:flex-end;">
+        <span class="btn" style="background:#fff; color:#111; border:2px solid #C8CDD3;">취소</span><span class="btn">저장</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. caps lock -->
+<section class="scene bg-up" id="s4">
+  <div class="copy">
+    <div class="brand"><img src="../../assets/icon-256.png" alt="">haneng</div>
+    <h1>Caps Lock이 켜지면<br><em style="color:var(--up)">주황 ‘A’</em></h1>
+    <p class="sub">모르고 켜 둔 Caps Lock 때문에<br>로그인을 실패하는 일이 줄어듭니다.</p>
+  </div>
+  <div class="win" style="left:960px; top:170px; width:760px; height:740px;">
+    <div class="titlebar"><img class="ico" src="../../assets/icon-256.png" alt="">로그인<div class="ctl"><span>─</span><span>☐</span><span>✕</span></div></div>
+    <div style="padding:60px 72px;">
+      <div style="font-family:'Malgun Gothic',sans-serif; font-size:40px; font-weight:700; margin-bottom:44px;">계정에 로그인</div>
+      <div class="field-label">아이디</div>
+      <div class="field" style="margin-bottom:36px;">jihyun.kim</div>
+      <div class="field-label">비밀번호</div>
+      <div class="field focus" style="letter-spacing:6px; font-size:26px;">●●●●●●<span class="caret" style="height:36px; vertical-align:middle; margin-left:4px;"><span class="badge up" style="letter-spacing:0; font-size:26px;">A</span></span></div>
+      <div style="margin-top:52px;"><span class="btn" style="width:100%;">로그인</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. settings -->
+<section class="scene bg-dark" id="s5">
+  <div class="copy" style="width:700px;">
+    <div class="brand"><img src="../../assets/icon-256.png" alt="">haneng</div>
+    <h1>필요한 만큼만<br>간단하게 설정</h1>
+    <div class="feat">
+      <div><span class="k">◐</span><span><b>배지 불투명도</b><span class="t">30~100% — 시야를 덜 가리게 조절</span></span></div>
+      <div><span class="k">✦</span><span><b>나타날 때 반짝임</b><span class="t">한/영이 바뀌는 순간 눈에 띄게</span></span></div>
+      <div><span class="k">↻</span><span><b>원클릭 업데이트</b><span class="t">버튼을 누를 때만 새 버전 확인</span></span></div>
+    </div>
+  </div>
+  <div style="position:absolute; left:930px; top:174px; width:844px; height:704px; border-radius:10px; overflow:hidden;
+              box-shadow:0 40px 100px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08);">
+    <img src="settings.png" alt="" style="width:844px; height:704px; display:block; image-rendering:pixelated;">
+  </div>
+</section>
+
+<!-- 6. privacy -->
+<section class="scene bg-ko light" id="s6">
+  <div class="copy" style="width:760px;">
+    <div class="brand"><img src="../../assets/icon-256.png" alt="">haneng</div>
+    <h1>보기만 합니다.<br>기록하지 않습니다.</h1>
+    <div class="feat">
+      <div><span class="k">⌨</span><span><b>키보드 입력을 관찰하지 않음</b><span class="t">입력 훅 없이 커서 위치와 IME 상태만 읽습니다</span></span></div>
+      <div><span class="k">✎</span><span><b>텍스트를 바꾸지 않음</b><span class="t">글자를 지우거나 입력하는 기능이 없습니다</span></span></div>
+      <div><span class="k">⛔</span><span><b>네트워크 접속 없음</b><span class="t">‘업데이트 확인’ 버튼을 누를 때만 예외</span></span></div>
+      <div><span class="k">◎</span><span><b>트레이에서 조용히</b><span class="t">로그인하면 자동 시작 · 트레이에서 켜고 끄기</span></span></div>
+    </div>
+  </div>
+  <div style="position:absolute; left:1010px; top:250px; width:700px; height:580px; display:grid; grid-template-columns:1fr; gap:28px; align-content:center;">
+    <div style="display:flex; gap:36px; justify-content:center;">
+      <span class="badge ko" style="width:176px; height:176px; font-size:100px; opacity:1; border-radius:0;">한</span>
+      <span class="badge lo" style="width:176px; height:176px; font-size:100px; opacity:1;">a</span>
+      <span class="badge up" style="width:176px; height:176px; font-size:100px; opacity:1;">A</span>
+    </div>
+    <div style="text-align:center; font-size:26px; color:var(--muted); font-weight:500; margin-top:12px;">Windows 10 / 11 · 무료 오픈소스 (MIT)</div>
+  </div>
+</section>
+
+<script>
+  const n = (location.hash || '#1').slice(1);
+  document.getElementById('s' + n).classList.add('on');
+</script>
+</body>
+</html>
